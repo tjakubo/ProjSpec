@@ -1,5 +1,9 @@
+function measure(setTime, channelCountNum)
 
-function measure(period,NumberOfChannels)
+global pomiar;
+global measTime;
+measTime = setTime;
+pomiar = zeros(channelCountNum, measTime*100);
 
 close all;
 % Make Automation.BDaq assembly visible to MATLAB.
@@ -8,9 +12,9 @@ BDaq = NET.addAssembly('Automation.BDaq');
 % Configure the following three parameters before running the demo.
 % The default device of project is demo device, users can choose other 
 % devices according to their needs. 
-deviceDescription = 'PCI-1747U,BID#0'; 
+deviceDescription = 'DemoDevice,BID#0'; 
 startChannel = int32(0);
-channelCount = int32(NumberOfChannels);
+channelCount = int32(channelCountNum);
 
 % Step 1: Create a 'InstantAiCtrl' for Instant AI function.
 instantAiCtrl = Automation.BDaq.InstantAiCtrl();
@@ -24,32 +28,36 @@ try
         deviceDescription);
     data = NET.createArray('System.Double', channelCount);
     
-    h = animatedline;
+    figure(1);
+    h = cell(1,channelCountNum);
+    ax = cell(1,channelCountNum);
+    for h_i = 1:channelCountNum
+        ax{h_i} = subplot(8,4,h_i);
+        h{h_i} = animatedline;
+        grid minor;
+    end
+    handles = struct('h', h, 'ax', ax);
     time = 0;
-    grid minor;
+
     
     % Step 3: Read samples and do post-process, we show data here.
     errorCode = Automation.BDaq.ErrorCode();
     t = timer('TimerFcn', {@TimerCallback, instantAiCtrl, startChannel, ...
-        channelCount, data}, 'period', period, 'executionmode', 'fixedrate', ...
-        'StartDelay', 1);
+        channelCount, data}, 'period', 0.001, 'executionmode', 'fixedrate');
     drawTimer = timer('TimerFcn', {@DrawSignal, instantAiCtrl, startChannel, ...
-        channelCount, data}, 'period', 1/30, 'executionmode', 'fixedrate', ...
-        'StartDelay', 1);
-    dataStruct = struct('h', h, 'time', time, 'period', 1/30);
-    %drawTimer.UserData.handle = h;
-    %drawTimer.UserData.time = time;
-    %drawTimer.UserData.period = period;
+        channelCount, data}, 'period', 0.5, 'executionmode', 'fixedrate');
+    dataStruct = struct('h', handles, 'time', time, 'period', 1/2, 'count', 1);
     drawTimer.UserData = dataStruct;
+    t.UserData = dataStruct;
     
-    %start(t);
+    start(t);
     start(drawTimer);
     
-    input('InstantAI is in progress...Press Enter key to quit!');
-    %stop(t);
+    waitforbuttonpress();
+    stop(t);
     stop(drawTimer);
     delete(drawTimer);
-    %delete(t);
+    delete(t);
 catch e
     disp(e);
     % Something is wrong.
@@ -78,6 +86,14 @@ end
 %pomiar = [];
 function TimerCallback(obj, event, instantAiCtrl, startChannel, ...
     channelCount, data)
+newUserData = obj.UserData;
+global measTime;
+if newUserData.count > measTime*100
+    disp(measTime);
+    disp('END')
+    stop(obj);
+    return;
+end
 %persistent pomiar;
 %global pomiar;
 %if isempty(pomiar)
@@ -87,30 +103,40 @@ errorCode = instantAiCtrl.Read(startChannel, channelCount, data);
 if BioFailed(errorCode)
     throw Exception();
 end
-%pomiar = [pomiar; data.Get(1)];
-fprintf('\n');
-for j=0:(channelCount - 1)
-    fprintf('channel %d : %10f ', j, data.Get(j));
+fprintf('READ %d\n', newUserData.count);
+global pomiar;
+seria = zeros(channelCount,1);
+for j=0:channelCount-1
+    seria(j+1) = data.Get(j);
+    %fprintf('channel %d : %10f ', j, data.Get(j));
 end
+pomiar(:,newUserData.count) = seria;
+
+newUserData.count = newUserData.count+1;
+obj.UserData = newUserData;
+
 end
 
 function DrawSignal(obj, event, instantAiCtrl, startChannel, ...
     channelCount, data)
-%persistent pomiar;
-%global pomiar;
-%if isempty(pomiar)
-%    pomiar = [];```
+%errorCode = instantAiCtrl.Read(startChannel, channelCount, data); 
+%if BioFailed(errorCode)
+%    throw Exception();
 %end
-errorCode = instantAiCtrl.Read(startChannel, channelCount, data); 
-if BioFailed(errorCode)
-    throw Exception();
-end
 %pomiar = [pomiar; data.Get(1)];
+global pomiar;
 disp('UPDATE');
-aa = obj.UserData;
-aa.time = aa.time + aa.period;
-axis([aa.time-2 aa.time+1 -1 1]);
-addpoints(aa.h,aa.time, data.Get(0) );
-obj.UserData = aa;
+newUserData = obj.UserData;
+ostPomiar = pomiar(:, newUserData.count);
+newUserData.time = newUserData.time + newUserData.period;
+for j=1:channelCount
+    %axes(newUserData.h(j).ax);
+    addpoints(newUserData.h(j).h, newUserData.time, ostPomiar(j));
+    set(newUserData.h(j).ax, 'XLim', [newUserData.time-2 newUserData.time+1]);
+    %xlim([newUserData.time-2 newUserData.time+1]);
+    %fprintf('channel %d : %10f ', j, data.Get(j));
+end
+%axis([aa.time-2 aa.time+1 -5 5]);
+obj.UserData = newUserData;
 drawnow;
 end
