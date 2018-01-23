@@ -1,9 +1,4 @@
-function measure(setTime, channelCountNum)
-
-global pomiar;
-global measTime;
-measTime = setTime;
-pomiar = zeros(channelCountNum, measTime*100);
+function diagDisp(channelNum)
 
 close all;
 % Make Automation.BDaq assembly visible to MATLAB.
@@ -15,7 +10,7 @@ BDaq = NET.addAssembly('Automation.BDaq');
 %deviceDescription = 'DemoDevice,BID#0'; 
 deviceDescription = 'PCI-1747U,BID#0'; 
 startChannel = int32(0);
-channelCount = int32(channelCountNum);
+channelCount = int32(32);
 
 % Step 1: Create a 'InstantAiCtrl' for Instant AI function.
 instantAiCtrl = Automation.BDaq.InstantAiCtrl();
@@ -29,8 +24,11 @@ try
         deviceDescription);
     data = NET.createArray('System.Double', channelCount);
     
-    %figure(1);
-    %h = cell(1,channelCountNum);
+    figure(1);
+    ax = axes();
+    h = animatedline;
+    title(sprintf('Channel %d', channelNum));
+    %test = uidropdown(f, 'Items',{'1', '2', '3', '4', '5', '6'});
     %ax = cell(1,channelCountNum);
 %     for h_i = 1:channelCountNum
 %         ax{h_i} = subplot(8,4,h_i);
@@ -43,38 +41,21 @@ try
     
     % Step 3: Read samples and do post-process, we show data here.
     errorCode = Automation.BDaq.ErrorCode();
-    while true
-        t = timer('TimerFcn', {@TimerCallback, instantAiCtrl, startChannel, ...
-            channelCount, data}, 'period', 0.01, 'executionmode', 'fixedrate');
-    %drawTimer = timer('TimerFcn', {@DrawSignal, instantAiCtrl, startChannel, ...
-        %channelCount, data}, 'period', 0.05, 'executionmode', 'fixedrate');
-        %dataStruct = struct('h', handles, 'time', time, 'period', 1/2, 'count', 1);
-        dataStruct = struct('time', time, 'period', 1/2, 'count', 1);
-    %drawTimer.UserData = dataStruct;
-        t.UserData = dataStruct;
-        fprintf('\nPOMIAR: ')
-        start(t);
-        pause(setTime+0.2);
-        fprintf('\nPAUZA:  ');
-        for k=1:20
-            pause(0.12);
-            fprintf('#');
-        end
-        
-        %while true
-        %   if ~t.running
-        %       pause(2);
-        %       start(t);
-        %   end
-        %end
-    end
-    
+    t = timer('TimerFcn', {@TimerCallback, instantAiCtrl, startChannel, ...
+        channelCount, data}, 'period', 0.01, 'executionmode', 'fixedrate');
+%drawTimer = timer('TimerFcn', {@DrawSignal, instantAiCtrl, startChannel, ...
+    %channelCount, data}, 'period', 0.05, 'executionmode', 'fixedrate');
+    %dataStruct = struct('h', handles, 'time', time, 'period', 1/2, 'count', 1);
+    dataStruct = struct('h', h, 'time', time, 'period', 0.01, 'ax', ax, 'channelNum', channelNum);
+%drawTimer.UserData = dataStruct;
+    t.UserData = dataStruct;
+    start(t);
+    waitforbuttonpress();
     %start(t);
     %start(drawTimer);
     
     %pause(setTime*2);
     %stop(t);
-    save('seria.mat', 'pomiar');
     %stop(drawTimer);
     %delete(drawTimer);
     delete(t);
@@ -107,46 +88,16 @@ end
 function TimerCallback(obj, event, instantAiCtrl, startChannel, ...
     channelCount, data)
 newUserData = obj.UserData;
-global measTime;
-global pomiar;
-if newUserData.count > measTime*100
-    figure(2);
-    suptitle('EMG');
-    for h_i = 1:16
-        subplot(4,4,h_i);
-        plot(linspace(1, measTime, length(pomiar(h_i, :))), pomiar(h_i, :));
-        grid minor; 
-    end
-    figure(3);
-    suptitle('Tensometry');
-    for h_i = 1:16
-        subplot(4,4,h_i);
-        plot(linspace(1, measTime, length(pomiar(h_i, :))), pomiar(h_i+16, :));
-        grid minor; 
-    end
-    stop(obj);
-    return;
-end
-%persistent pomiar;
-%global pomiar;
-%if isempty(pomiar)
-%    pomiar = [];```
-%end
+
 errorCode = instantAiCtrl.Read(startChannel, channelCount, data); 
 if BioFailed(errorCode)
     throw Exception();
 end
-if mod(newUserData.count, 10) == 0
-   fprintf('#') 
-end
-seria = zeros(channelCount,1);
-for j=0:channelCount-1
-    seria(j+1) = data.Get(j);
-    %fprintf('channel %d : %10f ', j, data.Get(j));
-end
-pomiar(:,newUserData.count) = seria;
-
-newUserData.count = newUserData.count+1;
+%fprintf('READ\n');
+addpoints(newUserData.h, newUserData.time, data.Get(newUserData.channelNum-1));
+set(newUserData.ax, 'XLim', [newUserData.time-2 newUserData.time+1]);
+newUserData.time = newUserData.time + newUserData.period;
+drawnow;
 obj.UserData = newUserData;
 
 end
